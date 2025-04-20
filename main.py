@@ -12,7 +12,7 @@ async def get_heartbeat():
 
 
 
-@app.post("/process/embedding")
+@app.get("/process/embedding")
 async def post_process_embedding(text: str):
     embedding = process_text(text)
     return {
@@ -21,7 +21,7 @@ async def post_process_embedding(text: str):
     }
 
 
-@app.post("/process/tags")
+@app.get("/process/tags")
 async def post_process_tags(text: str):
     tags = generate_tag_list(text)
     return {
@@ -30,7 +30,7 @@ async def post_process_tags(text: str):
     }
 
 
-@app.post("/process/most-common-tags")
+@app.get("/process/most-common-tags")
 async def post_process_most_common_tags(text: str, n: int):
     tags = generate_tag_list(text)
     tags = most_common_tags(tags, n)
