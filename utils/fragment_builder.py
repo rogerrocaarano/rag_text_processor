@@ -1,10 +1,10 @@
 import spacy
 import re
+import gc
 from spacy.tokens import Doc, Span
 from spacy.language import Language
 
 nlp = spacy.load("es_dep_news_trf")
-
 
 @Language.component("post_parser_es_legal")
 def post_parser_es_legal(doc: Doc) -> Doc:
@@ -14,26 +14,18 @@ def post_parser_es_legal(doc: Doc) -> Doc:
     )
 
     sent_starts = [0]
-    i = 0
-    while i < len(doc) - 3:
+    for i in range(len(doc) - 3):  # Ajustamos el loop para iterar de forma directa
         # Tomamos una ventana de 4 tokens como máximo
-        for window_size in range(4, 1, -1):
-            end = i + window_size
-            if end > len(doc):
-                continue
-            window = " ".join([t.text for t in doc[i:end]])
-            if pattern.match(window):
-                sent_starts.append(i)
-                break
-        i += 1
+        window = " ".join([t.text for t in doc[i:i+4]])
+        if pattern.match(window):
+            sent_starts.append(i)
 
+    # Eliminar duplicados y ordenar
     sent_starts = sorted(set(sent_starts))
 
-    # Construimos los spans como oraciones
-    spans = []
-    for idx, start in enumerate(sent_starts):
-        end = sent_starts[idx + 1] if idx + 1 < len(sent_starts) else len(doc)
-        spans.append(Span(doc, start, end))
+    # Construir los spans de oraciones
+    spans = [Span(doc, start, sent_starts[idx + 1] if idx + 1 < len(sent_starts) else len(doc))
+             for idx, start in enumerate(sent_starts)]
 
     doc.spans["sentences"] = spans
     doc._.custom_sents = spans
@@ -44,9 +36,41 @@ Doc.set_extension("custom_sents", default=None)
 nlp.add_pipe("post_parser_es_legal", after="parser")
 
 
-def fragment_text(text: str) -> list[str]:
-    doc = nlp(text)
-    return [span.text.strip() for span in doc._.custom_sents]
+def fragment_text(text: str, max_chunk_size: int = 4098) -> list[str]:
+    fragments = []
+    # procesar el texto en chunks variables
+    while text:
+        chunk_size = __get_chunk_size(text, max_chunk_size)
+        # descartar chunks pequeños
+        chunk = text[:chunk_size]
+        text = text[chunk_size:]
+        # Procesar el chunk y fragmentarlo
+        __process_chunk(chunk, fragments)
+    return fragments
+
+
+def __process_chunk(chunk: str, fragments: list[str]):
+    # Procesar el chunk y fragmentarlo
+    doc = nlp(chunk)
+    spans = [span.text.strip() for span in doc._.custom_sents]
+    
+    # Agregar los fragmentos completos solo si no están vacíos
+    spans = [span for span in spans if span != ""]
+    fragments.extend(spans)
+    
+    # Liberar memoria
+    del doc
+    gc.collect()
+
+
+def __get_chunk_size(text: str, max_chunk_size) -> int:
+    if len(text) <= max_chunk_size:
+        return len(text)
+    
+    stop_symbols = ['\n']
+    for i in range(max_chunk_size, 0, -1):
+        if text[i] in stop_symbols:
+            return i
 
 
 def normalize_text(text: str):
